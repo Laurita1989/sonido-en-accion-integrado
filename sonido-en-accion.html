@@ -1,0 +1,220 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Sonido en Acción</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #111;
+      color: #fff;
+      text-align: center;
+      padding: 20px;
+    }
+    canvas {
+      background: #222;
+      margin: 10px auto;
+      display: block;
+      border-radius: 8px;
+    }
+    button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+      background: #333;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #555;
+    }
+    .datos {
+      margin: 5px auto;
+      font-size: 14px;
+      color: #0f0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sonido en Acción</h1>
+  <p>Activá el micrófono y visualizá el comportamiento del sonido con diferentes representaciones.</p>
+
+  <button onclick="toggleOsciloscopio()">Osciloscopio</button>
+  <div class="datos" id="infoOsciloscopio"></div>
+
+  <button onclick="toggleFrecuencia()">Frecuencia</button>
+  <div class="datos" id="infoFrecuencia"></div>
+
+  <button onclick="toggleRMS()">VUmetro (RMS)</button>
+  <div class="datos" id="infoRMS"></div>
+
+  <button onclick="toggleEspectrograma()">Espectrograma</button>
+  <div class="datos" id="infoEspectrograma">Visualización espectral activa</div>
+
+  <canvas id="canvasOsciloscopio" width="800" height="200" style="display:none;"></canvas>
+  <canvas id="canvasFrecuencia" width="800" height="200" style="display:none;"></canvas>
+  <canvas id="canvasRMS" width="800" height="50" style="display:none;"></canvas>
+  <canvas id="canvasEspectrograma" width="800" height="200" style="display:none;"></canvas>
+
+  <script>
+    let audioCtx, analyser, micStream;
+    let canvasOsc = document.getElementById('canvasOsciloscopio');
+    let canvasFreq = document.getElementById('canvasFrecuencia');
+    let canvasRMS = document.getElementById('canvasRMS');
+    let canvasSpec = document.getElementById('canvasEspectrograma');
+    let oscCtx = canvasOsc.getContext('2d');
+    let freqCtx = canvasFreq.getContext('2d');
+    let rmsCtx = canvasRMS.getContext('2d');
+    let specCtx = canvasSpec.getContext('2d');
+
+    let showOsc = false, showFreq = false, showRMS = false, showSpec = false;
+
+    let infoOsc = document.getElementById('infoOsciloscopio');
+    let infoFreq = document.getElementById('infoFrecuencia');
+    let infoRMS = document.getElementById('infoRMS');
+    let infoSpec = document.getElementById('infoEspectrograma');
+    infoSpec.style.display = 'none';
+
+    async function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const source = audioCtx.createMediaStreamSource(micStream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+        draw();
+      }
+    }
+
+    function toggleOsciloscopio() {
+      canvasOsc.style.display = showOsc ? "none" : "block";
+      infoOsc.style.display = showOsc ? "none" : "block";
+      showOsc = !showOsc;
+      initAudio();
+    }
+
+    function toggleFrecuencia() {
+      canvasFreq.style.display = showFreq ? "none" : "block";
+      infoFreq.style.display = showFreq ? "none" : "block";
+      showFreq = !showFreq;
+      initAudio();
+    }
+
+    function toggleRMS() {
+      canvasRMS.style.display = showRMS ? "none" : "block";
+      infoRMS.style.display = showRMS ? "none" : "block";
+      showRMS = !showRMS;
+      initAudio();
+    }
+
+    function toggleEspectrograma() {
+      canvasSpec.style.display = showSpec ? "none" : "block";
+      infoSpec.style.display = showSpec ? "none" : "block";
+      showSpec = !showSpec;
+      initAudio();
+    }
+
+    let specScroll = 0;
+
+    function drawAxes(ctx, width, height, yMax, yLabelStep, xLabelStep, xUnit) {
+      ctx.strokeStyle = "#888";
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      for (let i = 0; i <= yMax; i += yLabelStep) {
+        let y = height - (i / yMax) * height;
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.fillStyle = "#aaa";
+        ctx.fillText(i.toFixed(0), 2, y - 2);
+      }
+      ctx.stroke();
+      if (xLabelStep > 0 && xUnit) {
+        for (let i = 0; i <= width; i += xLabelStep) {
+          ctx.fillText((i / width * xUnit).toFixed(0), i, height - 5);
+        }
+      }
+    }
+
+    function draw() {
+      requestAnimationFrame(draw);
+      let bufferLength = analyser.fftSize;
+      let dataArray = new Uint8Array(bufferLength);
+      analyser.getByteTimeDomainData(dataArray);
+
+      if (showOsc) {
+        oscCtx.clearRect(0, 0, canvasOsc.width, canvasOsc.height);
+        drawAxes(oscCtx, canvasOsc.width, canvasOsc.height, 255, 64, 100, 1000); // Ejes
+        oscCtx.beginPath();
+        let sliceWidth = canvasOsc.width / bufferLength;
+        let x = 0;
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          let v = dataArray[i];
+          let y = (v / 255.0) * canvasOsc.height;
+          sum += Math.abs(v - 128);
+          if (i === 0) oscCtx.moveTo(x, y);
+          else oscCtx.lineTo(x, y);
+          x += sliceWidth;
+        }
+        oscCtx.strokeStyle = "#0f0";
+        oscCtx.stroke();
+        infoOsc.textContent = `Amplitud promedio: ${(sum / bufferLength).toFixed(2)}`;
+      }
+
+      if (showFreq) {
+        let freqArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(freqArray);
+        freqCtx.clearRect(0, 0, canvasFreq.width, canvasFreq.height);
+        drawAxes(freqCtx, canvasFreq.width, canvasFreq.height, 255, 64, 100, audioCtx.sampleRate / 2); // Ejes
+        let barWidth = (canvasFreq.width / freqArray.length) * 2.5;
+        let x = 0;
+        let peak = 0;
+        let peakIndex = 0;
+        for (let i = 0; i < freqArray.length; i++) {
+          let val = freqArray[i];
+          if (val > peak) {
+            peak = val;
+            peakIndex = i;
+          }
+          freqCtx.fillStyle = "lime";
+          freqCtx.fillRect(x, canvasFreq.height - val, barWidth, val);
+          x += barWidth + 1;
+        }
+        let freq = (peakIndex * audioCtx.sampleRate) / analyser.fftSize;
+        infoFreq.textContent = `Frecuencia pico: ${freq.toFixed(1)} Hz`;
+      }
+
+      if (showRMS) {
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          let val = dataArray[i] - 128;
+          sum += val * val;
+        }
+        let rms = Math.sqrt(sum / dataArray.length);
+        let percent = Math.min(rms / 128, 1);
+        rmsCtx.clearRect(0, 0, canvasRMS.width, canvasRMS.height);
+        rmsCtx.fillStyle = "red";
+        rmsCtx.fillRect(0, 0, canvasRMS.width * percent, canvasRMS.height);
+        infoRMS.textContent = `Nivel RMS: ${rms.toFixed(2)}`;
+      }
+
+      if (showSpec) {
+        let freqData = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(freqData);
+
+        specCtx.drawImage(canvasSpec, -1, 0);
+        for (let y = 0; y < freqData.length; y++) {
+          let value = freqData[y];
+          let hue = value * 1.5;
+          specCtx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+          specCtx.fillRect(canvasSpec.width - 1, canvasSpec.height - y, 1, 1);
+        }
+      }
+    }
+  </script>
+</body>
+</html>
